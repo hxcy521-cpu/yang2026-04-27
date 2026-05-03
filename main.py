@@ -15,7 +15,7 @@ class RenameApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("批量转拼音重命名工具  [By:印象视界_程阳]")
+        self.root.title("D3_TOOL - 批量拼音重命名工具")
         self.root.geometry("1180x760")
 
         # 当前模式：folder 或 files
@@ -26,6 +26,10 @@ class RenameApp:
         # 仅重命名文件/仅重命名文件夹勾选
         self.rename_files_var = tk.BooleanVar(value=True)
         self.rename_folders_var = tk.BooleanVar(value=True)
+
+        # 第一阶段：拼音规则
+        self.pinyin_mode_var = tk.StringVar(value="full_lower")
+        self.separator_var = tk.StringVar(value="")
 
         # 文件模式时保存用户选择的文件
         self.selected_files: list[str] = []
@@ -77,6 +81,36 @@ class RenameApp:
             variable=self.rename_folders_var,
             command=self._on_filter_change,
         ).pack(side=tk.LEFT)
+
+
+        # 第一阶段：拼音规则区
+        rule_frame = ttk.LabelFrame(self.root, text="拼音转换规则", padding=10)
+        rule_frame.pack(fill=tk.X, padx=10, pady=(0, 6))
+
+        ttk.Label(rule_frame, text="拼音模式：").pack(side=tk.LEFT)
+        ttk.Combobox(
+            rule_frame,
+            textvariable=self.pinyin_mode_var,
+            state="readonly",
+            width=22,
+            values=[
+                "full_lower",
+                "full_upper",
+                "full_title",
+                "abbr_lower",
+                "abbr_upper",
+            ],
+        ).pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Label(rule_frame, text="分隔符：").pack(side=tk.LEFT)
+        ttk.Combobox(
+            rule_frame,
+            textvariable=self.separator_var,
+            state="readonly",
+            width=10,
+            values=["", "_", "-", " "],
+        ).pack(side=tk.LEFT)
+
 
         preview_frame = ttk.LabelFrame(self.root, text="预览列表", padding=10)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -192,9 +226,9 @@ class RenameApp:
         """将名称转换为拼音，不改变文件扩展名。"""
         if is_file:
             stem, ext = split_filename(name)
-            new_stem = normalize_to_pinyin(stem)
+            new_stem = normalize_to_pinyin(stem, self.pinyin_mode_var.get(), self.separator_var.get())
             return f"{new_stem or 'unnamed'}{ext}"
-        return normalize_to_pinyin(name) or "unnamed_folder"
+        return normalize_to_pinyin(name, self.pinyin_mode_var.get(), self.separator_var.get()) or "unnamed_folder"
 
     def _clear_preview(self) -> None:
         self.preview_items.clear()
@@ -412,18 +446,33 @@ def split_filename(filename: str):
     return os.path.splitext(filename)
 
 
-def normalize_to_pinyin(text: str) -> str:
-    """中文转拼音；英数保留；符号转下划线。"""
-    chars = []
+def normalize_to_pinyin(text: str, pinyin_mode: str = "full_lower", sep: str = "") -> str:
+    """中文转拼音并应用模式、分隔符。"""
+    tokens = []
     for ch in text:
-        if re.match(r"[\u4e00-\u9fff]", ch):
-            chars.extend(lazy_pinyin(ch))
+        if re.match(r"[一-鿿]", ch):
+            py = lazy_pinyin(ch)[0]
+            if pinyin_mode == "full_upper":
+                tokens.append(py.upper())
+            elif pinyin_mode == "full_title":
+                tokens.append(py[:1].upper() + py[1:].lower())
+            elif pinyin_mode in {"abbr_lower", "abbr_upper"}:
+                letter = py[:1].lower()
+                if pinyin_mode == "abbr_upper":
+                    letter = letter.upper()
+                tokens.append(letter)
+            else:
+                tokens.append(py.lower())
         elif re.match(r"[A-Za-z0-9]", ch):
-            chars.append(ch)
+            tokens.append(ch)
         else:
-            chars.append("_")
-    result = "".join(chars)
-    return re.sub(r"_+", "_", result).strip("_")
+            tokens.append("_")
+
+    text_out = sep.join(tokens) if sep else "".join(tokens)
+    if sep:
+        text_out = text_out.replace(f"{sep}_{sep}", sep)
+    text_out = re.sub(r"_+", "_", text_out).strip("_")
+    return text_out
 
 
 def unique_target_path(path: str, reserved: set | None = None) -> str:
