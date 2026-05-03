@@ -42,6 +42,9 @@ class RenameApp:
 
         # 预览项格式：dict(old_path, old_name, new_name, new_path, type, status)
         self.preview_items: list[dict] = []
+        self.last_rename_csv = os.path.join(os.getcwd(), "rename_log.csv")
+
+        self.conflict_strategy_var = tk.StringVar(value="auto_index")
 
         # 程序配置（记住上次路径）
         self.config_file = os.path.join(os.getcwd(), "app_config.json")
@@ -72,8 +75,11 @@ class RenameApp:
         action_frame = ttk.Frame(self.root, padding=(10, 0, 10, 10))
         action_frame.pack(fill=tk.X)
         ttk.Button(action_frame, text="扫描预览", command=self.scan_preview).pack(side=tk.LEFT)
-        ttk.Button(action_frame, text="开始重命名", command=self.rename_all).pack(side=tk.LEFT, padx=10)
+        self.rename_btn = ttk.Button(action_frame, text="开始重命名", command=self.rename_all, state=tk.DISABLED)
+        self.rename_btn.pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="撤回上次重命名", command=self.undo_last_rename).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="导出预览CSV", command=self.export_preview_csv).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="清空列表", command=self._clear_preview).pack(side=tk.LEFT, padx=10)
 
         ttk.Checkbutton(
             action_frame,
@@ -87,6 +93,10 @@ class RenameApp:
             variable=self.rename_folders_var,
             command=self._on_filter_change,
         ).pack(side=tk.LEFT)
+
+        ttk.Label(action_frame, text="冲突处理：").pack(side=tk.LEFT, padx=(15, 2))
+        ttk.Combobox(action_frame, textvariable=self.conflict_strategy_var, state="readonly", width=10,
+                     values=["skip", "auto_index"]).pack(side=tk.LEFT)
 
 
         # 第一阶段：拼音规则区
@@ -148,6 +158,13 @@ class RenameApp:
         self.tree.configure(yscrollcommand=yscroll.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         yscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        status_frame = ttk.Frame(self.root, padding=(10, 0, 10, 4))
+        status_frame.pack(fill=tk.X)
+        self.progress = ttk.Progressbar(status_frame, orient=tk.HORIZONTAL, mode="determinate")
+        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.status_var = tk.StringVar(value="状态：就绪")
+        ttk.Label(status_frame, textvariable=self.status_var, width=36).pack(side=tk.LEFT, padx=(8, 0))
 
         log_frame = ttk.LabelFrame(self.root, text="日志输出", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
@@ -278,6 +295,9 @@ class RenameApp:
         self.preview_items.clear()
         for row in self.tree.get_children():
             self.tree.delete(row)
+        self.rename_btn.config(state=tk.DISABLED)
+        self.progress["value"] = 0
+        self.status_var.set("状态：就绪")
 
     def scan_preview(self) -> None:
         """扫描并生成预览，不会执行重命名。"""
@@ -301,6 +321,8 @@ class RenameApp:
             )
 
         self.log(f"扫描预览完成，共 {len(self.preview_items)} 条。")
+        self.rename_btn.config(state=(tk.NORMAL if self.preview_items else tk.DISABLED))
+        self.status_var.set(f"状态：预览完成 {len(self.preview_items)} 条")
 
     def _scan_folder_mode(self) -> None:
         root_dir = self.selected_path.get().replace("已选文件夹：", "", 1).strip()
@@ -318,9 +340,16 @@ class RenameApp:
                     new_name = self.convert_name(filename, is_file=True)
                     if new_name == filename:
                         continue
-                    new_path = unique_target_path(os.path.join(current_root, new_name), used_targets)
+                    target = os.path.join(current_root, new_name)
+                    status = "待重命名"
+                    new_path = target
+                    if os.path.exists(target) or target in used_targets:
+                        if self.conflict_strategy_var.get() == "skip":
+                            status = "冲突"
+                        else:
+                            new_path = unique_target_path(target, used_targets)
                     used_targets.add(new_path)
-                    self.preview_items.append(make_preview_item(old_path, new_path, "文件"))
+                    self.preview_items.append(make_preview_item(old_path, new_path, "文件", status))
 
         # 再收集文件夹（深->浅）
         if self.rename_folders_var.get():
@@ -336,9 +365,16 @@ class RenameApp:
                 new_name = self.convert_name(old_name, is_file=False)
                 if new_name == old_name:
                     continue
-                new_path = unique_target_path(os.path.join(parent, new_name), used_targets)
+                target = os.path.join(parent, new_name)
+                status = "待重命名"
+                new_path = target
+                if os.path.exists(target) or target in used_targets:
+                    if self.conflict_strategy_var.get() == "skip":
+                        status = "冲突"
+                    else:
+                        new_path = unique_target_path(target, used_targets)
                 used_targets.add(new_path)
-                self.preview_items.append(make_preview_item(old_dir, new_path, "文件夹"))
+                self.preview_items.append(make_preview_item(old_dir, new_path, "文件夹", status))
 
     def _scan_files_mode(self) -> None:
         if not self.selected_files:
@@ -381,9 +417,16 @@ class RenameApp:
                 )
                 continue
 
-            new_path = unique_target_path(os.path.join(parent, new_name), used_targets)
+            target = os.path.join(parent, new_name)
+            status = "待重命名"
+            new_path = target
+            if os.path.exists(target) or target in used_targets:
+                if self.conflict_strategy_var.get() == "skip":
+                    status = "冲突"
+                else:
+                    new_path = unique_target_path(target, used_targets)
             used_targets.add(new_path)
-            self.preview_items.append(make_preview_item(old_path, new_path, "文件"))
+            self.preview_items.append(make_preview_item(old_path, new_path, "文件", status))
 
     def export_preview_csv(self) -> None:
         """导出预览列表到 CSV。"""
@@ -433,6 +476,9 @@ class RenameApp:
 
         log_file = self._get_log_path()
         plans = [x for x in self.preview_items if x["status"] == "待重命名"]
+        conflicts = len([x for x in self.preview_items if x["status"] == "冲突"])
+        if conflicts:
+            self.log(f"检测到冲突 {conflicts} 条")
 
         # 文件夹重命名时需深->浅
         file_items = [x for x in plans if x["type"] == "文件"]
@@ -440,11 +486,19 @@ class RenameApp:
         folder_items.sort(key=lambda x: x["old_path"].count(os.sep), reverse=True)
         ordered_plans = file_items + folder_items
 
-        done, failed = 0, 0
-        with open(log_file, "a", encoding="utf-8") as f:
+        done, failed, skipped = 0, 0, 0
+        total = len(ordered_plans)
+        self.progress["maximum"] = max(total, 1)
+        self.progress["value"] = 0
+        with open(log_file, "a", encoding="utf-8") as f, open(self.last_rename_csv, "w", newline="", encoding="utf-8-sig") as csv_f:
+            csv_writer = csv.writer(csv_f)
+            csv_writer.writerow(["原路径", "新路径", "原名称", "新名称", "操作时间"])
             f.write(f"\n===== {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 开始 =====\n")
             f.write(f"模式：{'文件夹模式' if self.mode == 'folder' else '文件模式'}\n")
-            for item in ordered_plans:
+            for idx, item in enumerate(ordered_plans, start=1):
+                self.progress["value"] = idx
+                self.status_var.set(f"状态：正在重命名 {idx}/{total}")
+                self.root.update_idletasks()
                 old_path = item["old_path"]
                 preview_new_path = item["new_path"]
                 item_type = item["type"]
@@ -453,7 +507,7 @@ class RenameApp:
                     msg = f"跳过（源不存在）[{item_type}]：{old_path}"
                     self.log(msg)
                     f.write(msg + "\n")
-                    failed += 1
+                    skipped += 1
                     continue
 
                 real_target = unique_target_path(preview_new_path)
@@ -466,15 +520,47 @@ class RenameApp:
                     self.log(msg)
                     f.write(msg + "\n")
                     done += 1
+                    csv_writer.writerow([old_path, real_target, os.path.basename(old_path), os.path.basename(real_target), datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
                 except Exception as e:
                     msg = f"失败[{item_type}]：{old_path} -> {real_target}，原因：{e}"
                     self.log(msg)
                     f.write(msg + "\n")
                     failed += 1
-            f.write(f"完成：成功 {done}，失败 {failed}\n")
+            f.write(f"完成：成功 {done}，跳过 {skipped}，失败 {failed}\n")
 
-        self.log(f"重命名完成：成功 {done}，失败 {failed}。日志：{log_file}")
-        messagebox.showinfo("完成", f"重命名完成\n成功：{done}\n失败：{failed}\n日志：{log_file}")
+        self.status_var.set(f"状态：完成 成功{done} 跳过{skipped} 失败{failed}")
+        self.log(f"重命名完成：成功 {done}，跳过 {skipped}，失败 {failed}。日志：{log_file}")
+        messagebox.showinfo("完成", f"重命名完成\n成功：{done}\n跳过：{skipped}\n失败：{failed}\n日志：{log_file}")
+
+    def undo_last_rename(self) -> None:
+        """撤回上次重命名。"""
+        if not os.path.exists(self.last_rename_csv):
+            messagebox.showinfo("提示", "未找到可撤回记录。")
+            return
+
+        success = failed = skipped = 0
+        with open(self.last_rename_csv, "r", encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+
+        for row in reversed(rows):
+            old_path = row.get("原路径", "")
+            new_path = row.get("新路径", "")
+            if not old_path or not new_path:
+                continue
+            if os.path.exists(old_path):
+                skipped += 1
+                continue
+            if not os.path.exists(new_path):
+                failed += 1
+                continue
+            try:
+                shutil.move(new_path, old_path)
+                success += 1
+            except Exception:
+                failed += 1
+
+        self.log(f"撤回完成：成功 {success}，失败 {failed}，跳过 {skipped}")
+        messagebox.showinfo("撤回完成", f"撤回完成：成功 {success}，失败 {failed}，跳过 {skipped}")
 
     def _get_log_path(self) -> str:
         """根据模式决定日志文件位置。"""
@@ -537,7 +623,7 @@ def unique_target_path(path: str, reserved: set | None = None) -> str:
     return candidate
 
 
-def make_preview_item(old_path: str, new_path: str, item_type: str) -> dict:
+def make_preview_item(old_path: str, new_path: str, item_type: str, status: str = "待重命名") -> dict:
     """生成统一预览项。"""
     return {
         "old_path": old_path,
@@ -545,7 +631,7 @@ def make_preview_item(old_path: str, new_path: str, item_type: str) -> dict:
         "new_name": os.path.basename(new_path),
         "new_path": new_path,
         "type": item_type,
-        "status": "待重命名",
+        "status": status,
     }
 
 
