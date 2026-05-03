@@ -1,3 +1,5 @@
+import csv
+import json
 import os
 import re
 import shutil
@@ -13,13 +15,17 @@ class RenameApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("批量转拼音重命名工具")
-        self.root.geometry("1120x700")
+        self.root.title("批量转拼音重命名工具  [By:印象视界_程阳]")
+        self.root.geometry("1180x760")
 
         # 当前模式：folder 或 files
         self.mode = ""
         self.mode_text = tk.StringVar(value="当前模式：未选择")
         self.selected_path = tk.StringVar(value="")
+
+        # 仅重命名文件/仅重命名文件夹勾选
+        self.rename_files_var = tk.BooleanVar(value=True)
+        self.rename_folders_var = tk.BooleanVar(value=True)
 
         # 文件模式时保存用户选择的文件
         self.selected_files: list[str] = []
@@ -27,7 +33,13 @@ class RenameApp:
         # 预览项格式：dict(old_path, old_name, new_name, new_path, type, status)
         self.preview_items: list[dict] = []
 
+        # 程序配置（记住上次路径）
+        self.config_file = os.path.join(os.getcwd(), "app_config.json")
+        self.config_data = self._load_config()
+
+        self.logo_img = None
         self._build_ui()
+        self._init_last_path()
 
     def _build_ui(self) -> None:
         """构建图形界面。"""
@@ -38,6 +50,10 @@ class RenameApp:
         ttk.Button(top_frame, text="选择文件", command=self.choose_files).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Label(top_frame, textvariable=self.mode_text).pack(side=tk.LEFT, padx=(18, 0))
+        ttk.Label(top_frame, text="By:印象视界_程阳", foreground="#2f4f4f").pack(side=tk.RIGHT)
+
+        # LOGO：如果项目目录有 logo.png，将在界面右上角显示
+        self._load_logo(top_frame)
 
         info_frame = ttk.Frame(self.root, padding=(10, 0, 10, 6))
         info_frame.pack(fill=tk.X)
@@ -47,6 +63,20 @@ class RenameApp:
         action_frame.pack(fill=tk.X)
         ttk.Button(action_frame, text="扫描预览", command=self.scan_preview).pack(side=tk.LEFT)
         ttk.Button(action_frame, text="开始重命名", command=self.rename_all).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="导出预览CSV", command=self.export_preview_csv).pack(side=tk.LEFT, padx=10)
+
+        ttk.Checkbutton(
+            action_frame,
+            text="仅重命名文件",
+            variable=self.rename_files_var,
+            command=self._on_filter_change,
+        ).pack(side=tk.LEFT, padx=(20, 5))
+        ttk.Checkbutton(
+            action_frame,
+            text="仅重命名文件夹",
+            variable=self.rename_folders_var,
+            command=self._on_filter_change,
+        ).pack(side=tk.LEFT)
 
         preview_frame = ttk.LabelFrame(self.root, text="预览列表", padding=10)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -58,9 +88,9 @@ class RenameApp:
         self.tree.heading("new_name", text="新名称")
         self.tree.heading("status", text="状态")
 
-        self.tree.column("old_path", width=500)
+        self.tree.column("old_path", width=530)
         self.tree.column("old_name", width=180)
-        self.tree.column("new_name", width=220)
+        self.tree.column("new_name", width=240)
         self.tree.column("status", width=120, anchor=tk.CENTER)
 
         yscroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -77,6 +107,48 @@ class RenameApp:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
+    def _load_logo(self, parent: ttk.Frame) -> None:
+        """加载并显示 LOGO（可选）。"""
+        logo_path = os.path.join(os.getcwd(), "logo.png")
+        if not os.path.exists(logo_path):
+            return
+        try:
+            self.logo_img = tk.PhotoImage(file=logo_path)
+            ttk.Label(parent, image=self.logo_img).pack(side=tk.RIGHT, padx=(10, 0))
+            self.log("已加载 logo.png")
+        except Exception:
+            # 不因为 logo 加载失败影响主功能
+            pass
+
+    def _init_last_path(self) -> None:
+        """初始化上次路径显示。"""
+        last_mode = self.config_data.get("last_mode", "")
+        last_folder = self.config_data.get("last_folder", "")
+
+        if last_mode == "folder" and last_folder and os.path.isdir(last_folder):
+            self.mode = "folder"
+            self.mode_text.set("当前模式：文件夹模式")
+            self.selected_path.set(f"已选文件夹：{last_folder}")
+            self.log(f"已恢复上次路径：{last_folder}")
+
+    def _load_config(self) -> dict:
+        """读取本地配置。"""
+        if not os.path.exists(self.config_file):
+            return {}
+        try:
+            with open(self.config_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_config(self) -> None:
+        """保存本地配置。"""
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(self.config_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log(f"保存配置失败：{e}")
+
     def log(self, message: str) -> None:
         """输出日志到界面。"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -85,23 +157,36 @@ class RenameApp:
 
     def choose_folder(self) -> None:
         """选择文件夹模式。"""
-        path = filedialog.askdirectory(title="请选择要处理的文件夹")
+        initial_dir = self.config_data.get("last_folder", "")
+        path = filedialog.askdirectory(title="请选择要处理的文件夹", initialdir=initial_dir)
         if path:
             self.mode = "folder"
             self.selected_files = []
             self.mode_text.set("当前模式：文件夹模式")
             self.selected_path.set(f"已选文件夹：{path}")
             self.log(f"已切换为文件夹模式：{path}")
+            self.config_data["last_mode"] = "folder"
+            self.config_data["last_folder"] = path
+            self._save_config()
 
     def choose_files(self) -> None:
         """选择文件模式，可多选文件。"""
-        paths = filedialog.askopenfilenames(title="请选择要处理的文件（可多选）")
+        initial_dir = self.config_data.get("last_files_dir", self.config_data.get("last_folder", ""))
+        paths = filedialog.askopenfilenames(title="请选择要处理的文件（可多选）", initialdir=initial_dir)
         if paths:
             self.mode = "files"
             self.selected_files = list(paths)
             self.mode_text.set("当前模式：文件模式")
             self.selected_path.set(f"已选文件数：{len(self.selected_files)}")
             self.log(f"已切换为文件模式，共选择 {len(self.selected_files)} 个文件")
+            self.config_data["last_mode"] = "files"
+            self.config_data["last_files_dir"] = os.path.dirname(self.selected_files[0])
+            self._save_config()
+
+    def _on_filter_change(self) -> None:
+        """勾选变化时提示。"""
+        if not self.rename_files_var.get() and not self.rename_folders_var.get():
+            self.log("提示：当前两个勾选都未选中，将不会产生重命名计划。")
 
     def convert_name(self, name: str, is_file: bool) -> str:
         """将名称转换为拼音，不改变文件扩展名。"""
@@ -145,36 +230,42 @@ class RenameApp:
         used_targets = set()
 
         # 先处理文件
-        for current_root, _dirs, files in os.walk(root_dir):
-            for filename in files:
-                old_path = os.path.join(current_root, filename)
-                new_name = self.convert_name(filename, is_file=True)
-                if new_name == filename:
-                    continue
-                new_path = unique_target_path(os.path.join(current_root, new_name), used_targets)
-                used_targets.add(new_path)
-                self.preview_items.append(make_preview_item(old_path, new_path, "文件"))
+        if self.rename_files_var.get():
+            for current_root, _dirs, files in os.walk(root_dir):
+                for filename in files:
+                    old_path = os.path.join(current_root, filename)
+                    new_name = self.convert_name(filename, is_file=True)
+                    if new_name == filename:
+                        continue
+                    new_path = unique_target_path(os.path.join(current_root, new_name), used_targets)
+                    used_targets.add(new_path)
+                    self.preview_items.append(make_preview_item(old_path, new_path, "文件"))
 
         # 再收集文件夹（深->浅）
-        dir_paths = []
-        for current_root, dirs, _files in os.walk(root_dir):
-            for d in dirs:
-                dir_paths.append(os.path.join(current_root, d))
-        dir_paths.sort(key=lambda p: p.count(os.sep), reverse=True)
+        if self.rename_folders_var.get():
+            dir_paths = []
+            for current_root, dirs, _files in os.walk(root_dir):
+                for d in dirs:
+                    dir_paths.append(os.path.join(current_root, d))
+            dir_paths.sort(key=lambda p: p.count(os.sep), reverse=True)
 
-        for old_dir in dir_paths:
-            old_name = os.path.basename(old_dir)
-            parent = os.path.dirname(old_dir)
-            new_name = self.convert_name(old_name, is_file=False)
-            if new_name == old_name:
-                continue
-            new_path = unique_target_path(os.path.join(parent, new_name), used_targets)
-            used_targets.add(new_path)
-            self.preview_items.append(make_preview_item(old_dir, new_path, "文件夹"))
+            for old_dir in dir_paths:
+                old_name = os.path.basename(old_dir)
+                parent = os.path.dirname(old_dir)
+                new_name = self.convert_name(old_name, is_file=False)
+                if new_name == old_name:
+                    continue
+                new_path = unique_target_path(os.path.join(parent, new_name), used_targets)
+                used_targets.add(new_path)
+                self.preview_items.append(make_preview_item(old_dir, new_path, "文件夹"))
 
     def _scan_files_mode(self) -> None:
         if not self.selected_files:
             messagebox.showwarning("提示", "请先选择一个或多个文件。")
+            return
+
+        if not self.rename_files_var.get():
+            self.log("当前已关闭“仅重命名文件”，文件模式下将无任务。")
             return
 
         used_targets = set()
@@ -212,6 +303,41 @@ class RenameApp:
             new_path = unique_target_path(os.path.join(parent, new_name), used_targets)
             used_targets.add(new_path)
             self.preview_items.append(make_preview_item(old_path, new_path, "文件"))
+
+    def export_preview_csv(self) -> None:
+        """导出预览列表到 CSV。"""
+        if not self.preview_items:
+            messagebox.showinfo("提示", "当前没有可导出的预览数据，请先扫描预览。")
+            return
+
+        default_dir = self.config_data.get("last_folder", os.getcwd())
+        save_path = filedialog.asksaveasfilename(
+            title="保存预览CSV",
+            initialdir=default_dir,
+            defaultextension=".csv",
+            filetypes=[("CSV 文件", "*.csv")],
+            initialfile=f"preview_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        )
+        if not save_path:
+            return
+
+        try:
+            with open(save_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["原路径", "原名称", "新名称", "状态", "类型", "新路径"])
+                for item in self.preview_items:
+                    writer.writerow([
+                        item["old_path"],
+                        item["old_name"],
+                        item["new_name"],
+                        item["status"],
+                        item["type"],
+                        item["new_path"],
+                    ])
+            self.log(f"已导出预览CSV：{save_path}")
+            messagebox.showinfo("完成", f"导出成功：\n{save_path}")
+        except Exception as e:
+            messagebox.showerror("错误", f"导出失败：{e}")
 
     def rename_all(self) -> None:
         """执行重命名（必须先预览），并二次确认。"""
