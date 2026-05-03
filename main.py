@@ -29,7 +29,7 @@ class RenameApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("D3_TOOL - 批量拼音重命名工具")
-        self.root.geometry("1460x900")
+        self.root.geometry("1500x920")
         self.root.configure(bg="#F5F7FB")
 
         self.mode = ""
@@ -71,8 +71,8 @@ class RenameApp:
 
         title_frame = tk.Frame(self.root, bg="#FFFFFF", padx=16, pady=12)
         title_frame.pack(fill=tk.X, padx=8, pady=(8, 6))
-        tk.Label(title_frame, text="🪶  D3_TOOL 批量拼音重命名工具", bg="#FFFFFF", fg="#111827", font=("Microsoft YaHei UI", 20, "bold")).pack(side=tk.LEFT)
-        tk.Label(title_frame, text="支持文件 / 文件夹中文转拼音、日期后缀、版本号、预览导出", bg="#FFFFFF", fg="#6B7280", font=("Microsoft YaHei UI", 12)).pack(side=tk.LEFT, padx=18)
+        tk.Label(title_frame, text="🪶  D3_TOOL 批量拼音重命名工具", bg="#FFFFFF", fg="#111827", font=("Microsoft YaHei UI", 21, "bold")).pack(side=tk.LEFT)
+        tk.Label(title_frame, text="支持文件 / 文件夹中文转拼音、日期后缀、版本号、预览导出", bg="#FFFFFF", fg="#6B7280", font=("Microsoft YaHei UI", 12)).pack(side=tk.LEFT, padx=20)
         tk.Label(title_frame, text="By: 印象视界_程阳", bg="#FFFFFF", fg="#111827", font=("Microsoft YaHei UI", 14, "bold")).pack(side=tk.RIGHT)
 
         body = tk.Frame(self.root, bg="#F5F7FB")
@@ -81,9 +81,9 @@ class RenameApp:
         top_grid = tk.Frame(body, bg="#F5F7FB")
         top_grid.pack(fill=tk.X)
 
-        step1 = ttk.LabelFrame(top_grid, text="1  选择对象", style="Card.TLabelframe", padding=14)
-        step2 = ttk.LabelFrame(top_grid, text="2  设置命名规则", style="Card.TLabelframe", padding=14)
-        step3 = ttk.LabelFrame(top_grid, text="3  后缀选项", style="Card.TLabelframe", padding=14)
+        step1 = ttk.LabelFrame(top_grid, text="1  选择对象", style="Card.TLabelframe", padding=16)
+        step2 = ttk.LabelFrame(top_grid, text="2  设置命名规则", style="Card.TLabelframe", padding=16)
+        step3 = ttk.LabelFrame(top_grid, text="3  后缀选项", style="Card.TLabelframe", padding=16)
         step1.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         step2.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         step3.grid(row=0, column=2, sticky="nsew")
@@ -110,7 +110,7 @@ class RenameApp:
         self.sep_cb.bind("<<ComboboxSelected>>", self._on_rule_change)
 
         self.rule_preview_var = tk.StringVar()
-        tk.Label(step2, textvariable=self.rule_preview_var, bg="#EEF5FF", fg="#1D4ED8", font=("Microsoft YaHei UI", 13, "bold"), padx=8, pady=8, anchor="w").grid(row=2, column=0, columnspan=2, sticky="ew")
+        tk.Label(step2, textvariable=self.rule_preview_var, bg="#EEF4FF", fg="#2563EB", font=("Microsoft YaHei UI", 14, "bold"), padx=10, pady=10, anchor="w").grid(row=2, column=0, columnspan=2, sticky="ew")
         step2.grid_columnconfigure(0, weight=1)
         step2.grid_columnconfigure(1, weight=1)
 
@@ -128,14 +128,14 @@ class RenameApp:
         self.conflict_cb.set(self.CONFLICT_LABELS["auto_index"])
         self.conflict_cb.bind("<<ComboboxSelected>>", self._on_conflict_change)
 
-        step4 = ttk.LabelFrame(body, text="4  执行操作", style="Card.TLabelframe", padding=14)
+        step4 = ttk.LabelFrame(body, text="4  执行操作", style="Card.TLabelframe", padding=16)
         step4.pack(fill=tk.X, pady=(10, 8))
-        tk.Button(step4, text="🔍 扫描预览", command=self.scan_preview, bg="#1663D6", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 17, "bold"), padx=20, pady=12).pack(side=tk.LEFT)
-        self.rename_btn = tk.Button(step4, text="▶ 开始重命名（0）", command=self.rename_all, state=tk.DISABLED, bg="#C9CDD3", fg="#7A7F87", relief=tk.FLAT, font=("Microsoft YaHei UI", 17, "bold"), padx=20, pady=12)
+        tk.Button(step4, text="🔍 扫描预览", command=self.scan_preview, bg="#1663D6", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 18, "bold"), padx=20, pady=12).pack(side=tk.LEFT)
+        self.rename_btn = tk.Button(step4, text="▶ 开始重命名（0）", command=self.rename_all, state=tk.DISABLED, bg="#C9CDD3", fg="#7A7F87", relief=tk.FLAT, font=("Microsoft YaHei UI", 18, "bold"), padx=20, pady=12)
         self.rename_btn.pack(side=tk.LEFT, padx=12)
-        tk.Button(step4, text="↻ 撤回上次重命名", command=self.undo_last_rename, bg="#F59E0B", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 16, "bold"), padx=16, pady=12).pack(side=tk.LEFT, padx=8)
+        tk.Button(step4, text="↻ 撤回上次重命名", command=self.undo_last_rename, bg="#F59E0B", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 17, "bold"), padx=16, pady=12).pack(side=tk.LEFT, padx=8)
         ttk.Button(step4, text="导出预览CSV", command=self.export_preview_csv).pack(side=tk.LEFT, padx=8)
-        tk.Button(step4, text="🧹 清空列表", command=self._clear_preview, bg="#7B8698", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 15, "bold"), padx=18, pady=12).pack(side=tk.LEFT, padx=8)
+        tk.Button(step4, text="🧹 清空列表", command=self._clear_preview, bg="#7B8698", fg="#FFFFFF", relief=tk.FLAT, font=("Microsoft YaHei UI", 16, "bold"), padx=18, pady=12).pack(side=tk.LEFT, padx=8)
         ttk.Checkbutton(step4, text="重命名文件", variable=self.rename_files_var, command=self._on_filter_change).pack(side=tk.LEFT, padx=(14, 2))
         ttk.Checkbutton(step4, text="重命名文件夹", variable=self.rename_folders_var, command=self._on_filter_change).pack(side=tk.LEFT, padx=2)
 
@@ -150,9 +150,9 @@ class RenameApp:
             self.tree.heading(c, text=h)
         self.tree.column("idx", width=56, anchor=tk.CENTER)
         self.tree.column("type", width=70, anchor=tk.CENTER)
-        self.tree.column("old_name", width=240)
-        self.tree.column("new_name", width=360)
-        self.tree.column("old_path", width=520)
+        self.tree.column("old_name", width=260)
+        self.tree.column("new_name", width=420)
+        self.tree.column("old_path", width=560)
         self.tree.column("status", width=180, anchor=tk.CENTER)
         yscroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=yscroll.set)
@@ -168,7 +168,7 @@ class RenameApp:
 
         log_frame = ttk.LabelFrame(body, text="日志输出", style="Card.TLabelframe", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
-        self.log_text = tk.Text(log_frame, height=5)
+        self.log_text = tk.Text(log_frame, height=6, font=("Consolas", 12))
         log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -312,7 +312,7 @@ class RenameApp:
         for idx, item in enumerate(self.preview_items, start=1):
             self.tree.insert("", tk.END, values=(idx, item["type"], item["old_name"], item["new_name"], os.path.dirname(item["old_path"]), item["status"]))
 
-        self.summary_var.set(f"扫描结果：共 {len(self.preview_items)} 个项目（文件 {file_count} 个，文件夹 {folder_count} 个）  |  可重命名：{ready_count} 个（绿色）  |  冲突跳过：{conflict_count} 个（橙色）  |  错误：{error_count} 个（红色）")
+        self.summary_var.set(f"扫描结果：共 {len(self.preview_items)} 个项目（文件 {file_count} 个，文件夹 {folder_count} 个）   |   可重命名：{ready_count} 个   |   冲突跳过：{conflict_count} 个   |   错误：{error_count} 个")
         self.log(f"扫描完成，共 {len(self.preview_items)} 个项目（文件 {file_count} 个，文件夹 {folder_count} 个）")
         self.rename_btn.config(
             state=(tk.NORMAL if ready_count > 0 else tk.DISABLED),
