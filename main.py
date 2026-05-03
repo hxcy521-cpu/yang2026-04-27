@@ -31,6 +31,12 @@ class RenameApp:
         self.pinyin_mode_var = tk.StringVar(value="full_lower")
         self.separator_var = tk.StringVar(value="")
 
+        # 第二阶段：文件名尾缀规则
+        self.add_date_suffix_var = tk.BooleanVar(value=False)
+        self.date_suffix_var = tk.StringVar(value=datetime.now().strftime("%m%d"))
+        self.add_version_suffix_var = tk.BooleanVar(value=False)
+        self.version_suffix_var = tk.StringVar(value="1")
+
         # 文件模式时保存用户选择的文件
         self.selected_files: list[str] = []
 
@@ -111,6 +117,17 @@ class RenameApp:
             values=["", "_", "-", " "],
         ).pack(side=tk.LEFT)
 
+        suffix_frame = ttk.LabelFrame(self.root, text="文件名尾缀设置", padding=10)
+        suffix_frame.pack(fill=tk.X, padx=10, pady=(0, 6))
+
+        ttk.Checkbutton(suffix_frame, text="添加日期尾缀", variable=self.add_date_suffix_var).pack(side=tk.LEFT)
+        ttk.Label(suffix_frame, text="日期(MMDD)：").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Entry(suffix_frame, textvariable=self.date_suffix_var, width=8).pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Checkbutton(suffix_frame, text="添加版本尾缀", variable=self.add_version_suffix_var).pack(side=tk.LEFT)
+        ttk.Label(suffix_frame, text="版本(V1-V10)：").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Combobox(suffix_frame, textvariable=self.version_suffix_var, width=6, state="readonly",
+                     values=[str(i) for i in range(1, 11)]).pack(side=tk.LEFT)
 
         preview_frame = ttk.LabelFrame(self.root, text="预览列表", padding=10)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -222,13 +239,40 @@ class RenameApp:
         if not self.rename_files_var.get() and not self.rename_folders_var.get():
             self.log("提示：当前两个勾选都未选中，将不会产生重命名计划。")
 
+    def _validate_suffix_rules(self) -> bool:
+        """校验日期/版本尾缀输入。"""
+        if self.add_date_suffix_var.get():
+            date_text = self.date_suffix_var.get().strip()
+            if (not date_text.isdigit()) or len(date_text) != 4:
+                messagebox.showerror("错误", "日期尾缀必须是4位数字，例如 0502")
+                return False
+
+        if self.add_version_suffix_var.get():
+            version_text = self.version_suffix_var.get().strip()
+            if not version_text.isdigit() or not (1 <= int(version_text) <= 10):
+                messagebox.showerror("错误", "版本号范围只能是 V1 到 V10")
+                return False
+
+        return True
+
+    def _apply_suffix(self, base_name: str) -> str:
+        """在文件名主体后添加日期/版本尾缀。"""
+        new_name = base_name
+        if self.add_date_suffix_var.get():
+            new_name += f"_{self.date_suffix_var.get().strip()}"
+        if self.add_version_suffix_var.get():
+            new_name += f"_V{self.version_suffix_var.get().strip()}"
+        return new_name
+
     def convert_name(self, name: str, is_file: bool) -> str:
         """将名称转换为拼音，不改变文件扩展名。"""
         if is_file:
             stem, ext = split_filename(name)
             new_stem = normalize_to_pinyin(stem, self.pinyin_mode_var.get(), self.separator_var.get())
-            return f"{new_stem or 'unnamed'}{ext}"
-        return normalize_to_pinyin(name, self.pinyin_mode_var.get(), self.separator_var.get()) or "unnamed_folder"
+            new_stem = self._apply_suffix(new_stem or "unnamed")
+            return f"{new_stem}{ext}"
+        new_name = normalize_to_pinyin(name, self.pinyin_mode_var.get(), self.separator_var.get()) or "unnamed_folder"
+        return self._apply_suffix(new_name)
 
     def _clear_preview(self) -> None:
         self.preview_items.clear()
@@ -238,6 +282,9 @@ class RenameApp:
     def scan_preview(self) -> None:
         """扫描并生成预览，不会执行重命名。"""
         self._clear_preview()
+
+        if not self._validate_suffix_rules():
+            return
 
         if self.mode == "folder":
             self._scan_folder_mode()
